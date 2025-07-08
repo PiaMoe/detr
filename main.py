@@ -15,6 +15,8 @@ import util.misc as utils
 from datasets import build_dataset, get_coco_api_from_dataset
 from engine import evaluate, train_one_epoch
 from models import build_model
+import wandb
+
 
 
 def get_args_parser():
@@ -79,12 +81,12 @@ def get_args_parser():
                         help="Relative classification weight of the no-object class")
 
     # dataset parameters
-    parser.add_argument('--dataset_file', default='coco')
-    parser.add_argument('--coco_path', type=str)
-    parser.add_argument('--coco_panoptic_path', type=str)
+    parser.add_argument('--dataset_file', default='custom_data') # coco, coco_panoptic, custom_data
+    parser.add_argument('--data_path', type=str)
+    parser.add_argument('--panoptic_path', type=str)
     parser.add_argument('--remove_difficult', action='store_true')
 
-    parser.add_argument('--output_dir', default='',
+    parser.add_argument('--output_dir', default='output',
                         help='path where to save, empty for no saving')
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
@@ -243,6 +245,13 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('DETR training and evaluation script', parents=[get_args_parser()])
     args = parser.parse_args()
+
+    wandb.init(
+        project="DETR",
+        name=f"run-{args.dataset_file}-{args.backbone}",
+        config=vars(args)
+    )
+
     if args.output_dir:
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     main(args)
