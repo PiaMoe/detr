@@ -8,10 +8,12 @@ import sys
 from typing import Iterable
 
 import torch
+from wandb.plot import visualize
 
 import util.misc as utils
 from datasets.coco_eval import CocoEvaluator
 from datasets.panoptic_eval import PanopticEvaluator
+from util.logging import visualize_prediction
 
 
 def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
@@ -82,14 +84,22 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
         panoptic_evaluator = PanopticEvaluator(
             data_loader.dataset.ann_file,
             data_loader.dataset.ann_folder,
-            output_dir=os.path.join(output_dir, "panoptic_eval"),
+            output_dir=os.path.join("output", output_dir, "panoptic_eval"),
         )
+
+    img_pil = None
+    batch_idx = 0
 
     for samples, targets in metric_logger.log_every(data_loader, 10, header):
         samples = samples.to(device)
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
 
         outputs = model(samples)
+
+        # for wandb logging
+        if batch_idx == 0:  # only visualize the first batch
+            img_pil = visualize_prediction(samples, outputs)
+
         loss_dict = criterion(outputs, targets)
         weight_dict = criterion.weight_dict
 
@@ -123,6 +133,8 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
 
             panoptic_evaluator.update(res_pano)
 
+        batch_idx += 1
+
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print("Averaged stats:", metric_logger)
@@ -148,4 +160,4 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
         stats['PQ_all'] = panoptic_res["All"]
         stats['PQ_th'] = panoptic_res["Things"]
         stats['PQ_st'] = panoptic_res["Stuff"]
-    return stats, coco_evaluator
+    return stats, coco_evaluator, img_pil

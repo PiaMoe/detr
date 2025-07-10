@@ -18,7 +18,6 @@ from models import build_model
 import wandb
 
 
-
 def get_args_parser():
     parser = argparse.ArgumentParser('Set transformer detector', add_help=False)
     parser.add_argument('--lr', default=1e-4, type=float)
@@ -86,7 +85,7 @@ def get_args_parser():
     parser.add_argument('--panoptic_path', type=str)
     parser.add_argument('--remove_difficult', action='store_true')
 
-    parser.add_argument('--output_dir', default='output',
+    parser.add_argument('--output_dir', default='',
                         help='path where to save, empty for no saving')
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
@@ -184,10 +183,10 @@ def main(args):
             args.start_epoch = checkpoint['epoch'] + 1
 
     if args.eval:
-        test_stats, coco_evaluator = evaluate(model, criterion, postprocessors,
+        test_stats, coco_evaluator, _ = evaluate(model, criterion, postprocessors,
                                               data_loader_val, base_ds, device, args.output_dir)
         if args.output_dir:
-            utils.save_on_master(coco_evaluator.coco_eval["bbox"].eval, output_dir / "eval.pth")
+            utils.save_on_master(coco_evaluator.coco_eval["bbox"].eval, "output" / output_dir / "eval.pth")
         return
 
     print("Start training")
@@ -200,10 +199,10 @@ def main(args):
             args.clip_max_norm)
         lr_scheduler.step()
         if args.output_dir:
-            checkpoint_paths = [output_dir / 'checkpoint.pth']
+            checkpoint_paths = ['output' / output_dir / 'checkpoint.pth']
             # extra checkpoint before LR drop and every 100 epochs
             if (epoch + 1) % args.lr_drop == 0 or (epoch + 1) % 100 == 0:
-                checkpoint_paths.append(output_dir / f'checkpoint{epoch:04}.pth')
+                checkpoint_paths.append("output" / output_dir / f'checkpoint{epoch:04}.pth')
             for checkpoint_path in checkpoint_paths:
                 utils.save_on_master({
                     'model': model_without_ddp.state_dict(),
@@ -213,7 +212,7 @@ def main(args):
                     'args': args,
                 }, checkpoint_path)
 
-        test_stats, coco_evaluator = evaluate(
+        test_stats, coco_evaluator, log_img = evaluate(
             model, criterion, postprocessors, data_loader_val, base_ds, device, args.output_dir
         )
 
@@ -222,20 +221,37 @@ def main(args):
                      'epoch': epoch,
                      'n_parameters': n_parameters}
 
+        # Wandb logging
+        wandb.log({
+            "train/train_loss": train_stats['loss'],
+            "train/train_loss_ce": train_stats['loss_ce'],
+            "train/train_loss_bbox": train_stats['loss_bbox'],
+            "train/train_loss_giou": train_stats['loss_giou'],
+            "train/train_class_error": train_stats['class_error'],
+            "val/val_loss": test_stats['loss'],
+            "val/val_loss_ce": test_stats['loss_ce'],
+            "val/val_loss_bbox": test_stats['loss_bbox'],
+            "val/val_loss_giou": test_stats['loss_giou'],
+            "val/val_class_error": test_stats['class_error'],
+            "val/val_mAP": test_stats['mAP'] if 'mAP' in test_stats else 0
+        })
+
+        wandb.log({"eval_prediction": wandb.Image(log_img)})
+
         if args.output_dir and utils.is_main_process():
-            with (output_dir / "log.txt").open("a") as f:
+            with ("output" / output_dir / "log.txt").open("a") as f:
                 f.write(json.dumps(log_stats) + "\n")
 
             # for evaluation logs
             if coco_evaluator is not None:
-                (output_dir / 'eval').mkdir(exist_ok=True)
+                ("output" / output_dir / 'eval').mkdir(exist_ok=True)
                 if "bbox" in coco_evaluator.coco_eval:
                     filenames = ['latest.pth']
                     if epoch % 50 == 0:
                         filenames.append(f'{epoch:03}.pth')
                     for name in filenames:
                         torch.save(coco_evaluator.coco_eval["bbox"].eval,
-                                   output_dir / "eval" / name)
+                                   "output" / output_dir / "eval" / name)
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
@@ -248,10 +264,11 @@ if __name__ == '__main__':
 
     wandb.init(
         project="DETR",
-        name=f"run-{args.dataset_file}-{args.backbone}",
+        name=args.output_dir,
         config=vars(args)
     )
 
+    output_dir = "output/" + args.output_dir
     if args.output_dir:
-        Path(args.output_dir).mkdir(parents=True, exist_ok=True)
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
     main(args)
