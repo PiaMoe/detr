@@ -222,21 +222,22 @@ def main(args):
                      'n_parameters': n_parameters}
 
         # Wandb logging
-        wandb.log({
-            "train/train_loss": train_stats['loss'],
-            "train/train_loss_ce": train_stats['loss_ce'],
-            "train/train_loss_bbox": train_stats['loss_bbox'],
-            "train/train_loss_giou": train_stats['loss_giou'],
-            "train/train_class_error": train_stats['class_error'],
-            "val/val_loss": test_stats['loss'],
-            "val/val_loss_ce": test_stats['loss_ce'],
-            "val/val_loss_bbox": test_stats['loss_bbox'],
-            "val/val_loss_giou": test_stats['loss_giou'],
-            "val/val_class_error": test_stats['class_error'],
-            "val/val_mAP": test_stats['mAP'] if 'mAP' in test_stats else 0
-        })
+        if is_main_process():
+            wandb.log({
+                    "train/train_loss": train_stats['loss'],
+                    "train/train_loss_ce": train_stats['loss_ce'],
+                    "train/train_loss_bbox": train_stats['loss_bbox'],
+                    "train/train_loss_giou": train_stats['loss_giou'],
+                    "train/train_class_error": train_stats['class_error'],
+                    "val/val_loss": test_stats['loss'],
+                    "val/val_loss_ce": test_stats['loss_ce'],
+                    "val/val_loss_bbox": test_stats['loss_bbox'],
+                    "val/val_loss_giou": test_stats['loss_giou'],
+                    "val/val_class_error": test_stats['class_error'],
+                    "val/val_mAP": test_stats['mAP'] if 'mAP' in test_stats else 0
+                })
 
-        wandb.log({"eval_prediction": wandb.Image(log_img)})
+            wandb.log({"eval_prediction": wandb.Image(log_img)})
 
         if args.output_dir and utils.is_main_process():
             with ("output" / output_dir / "log.txt").open("a") as f:
@@ -257,16 +258,20 @@ def main(args):
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print('Training time {}'.format(total_time_str))
 
+def is_main_process():
+    return not args.distributed or torch.distributed.get_rank() == 0
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('DETR training and evaluation script', parents=[get_args_parser()])
     args = parser.parse_args()
 
-    wandb.init(
-        project="DETR",
-        name=args.output_dir,
-        config=vars(args)
-    )
+    if is_main_process():
+        wandb.init(
+            project="DETR",
+            name=args.output_dir,
+            config=vars(args)
+        )
 
     output_dir = "output/" + args.output_dir
     if args.output_dir:
