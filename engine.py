@@ -87,7 +87,7 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
             output_dir=os.path.join("output", output_dir, "panoptic_eval"),
         )
 
-    img_pil = None
+    vis_images = None
     batch_idx = 0
 
     for samples, targets in metric_logger.log_every(data_loader, 10, header):
@@ -98,7 +98,7 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
 
         # for wandb logging
         if batch_idx == 0:  # only visualize the first batch
-            img_pil = visualize_prediction(samples, outputs)
+            vis_images = visualize_prediction(samples, outputs)
 
         loss_dict = criterion(outputs, targets)
         weight_dict = criterion.weight_dict
@@ -160,4 +160,4 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
         stats['PQ_all'] = panoptic_res["All"]
         stats['PQ_th'] = panoptic_res["Things"]
         stats['PQ_st'] = panoptic_res["Stuff"]
-    return stats, coco_evaluator, img_pil
+    return stats, coco_evaluator, vis_images

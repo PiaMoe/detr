@@ -112,6 +112,15 @@ def main(args):
     print(args)
 
     device = torch.device(args.device)
+    
+
+    if is_main_process():
+        wandb.init(
+            project="DETR",
+            name=args.output_dir,
+            config=vars(args)
+        )
+
 
     # fix the seed for reproducibility
     seed = args.seed + utils.get_rank()
@@ -212,7 +221,7 @@ def main(args):
                     'args': args,
                 }, checkpoint_path)
 
-        test_stats, coco_evaluator, log_img = evaluate(
+        test_stats, coco_evaluator, log_imgs = evaluate(
             model, criterion, postprocessors, data_loader_val, base_ds, device, args.output_dir
         )
 
@@ -236,8 +245,10 @@ def main(args):
                     "val/val_class_error": test_stats['class_error'],
                     "val/val_mAP": test_stats['mAP'] if 'mAP' in test_stats else 0
                 })
-
-            wandb.log({"eval_prediction": wandb.Image(log_img)})
+            
+            
+            for img_num, img in enumerate(log_imgs):
+                wandb.log({"eval_prediction": wandb.Image(img, caption=f"epoch{epoch}_{img_num}")})
 
         if args.output_dir and utils.is_main_process():
             with ("output" / output_dir / "log.txt").open("a") as f:
@@ -265,13 +276,6 @@ def is_main_process():
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('DETR training and evaluation script', parents=[get_args_parser()])
     args = parser.parse_args()
-
-    if is_main_process():
-        wandb.init(
-            project="DETR",
-            name=args.output_dir,
-            config=vars(args)
-        )
 
     output_dir = "output/" + args.output_dir
     if args.output_dir:
